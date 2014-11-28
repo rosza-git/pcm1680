@@ -3,7 +3,7 @@
 *    - main program
 *
 * created  : 2014.11.16.
-* modified : 2014.11.26.
+* modified : 2014.11.28.
 * author   : rosza
 * version  : 0.04
 *
