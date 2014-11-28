@@ -15,15 +15,21 @@ import com.pi4j.io.i2c.I2CDevice;
 import com.pi4j.io.i2c.I2CFactory;
 
 class pcm1680core {
+  /** I2C device */
   private final I2CDevice device;
+
+  /** required for list all registers */
   private static final int READ_ALL_REG = 1000;
+
+  /** reserved register name */
+  private static final String RSV_REG = "RSV";
 
   /**
   * constructor
   *
   * @param bus I2C bus instance
   */
-  PCM1680_core(I2CBus bus) throws Exception {
+  pcm1680core(I2CBus bus) throws Exception {
     device = bus.getDevice(ADDRESS);
   }
 
@@ -41,7 +47,17 @@ class pcm1680core {
   * This method reads and prints out the given or all register(s).
   * If @param register = READ_ALL_REG then it is reads all available register.
   *
-  * @param register register to read from
+  * @param register register (as string) to read from
+  */
+  void action(String register) {
+    action(registerName2Number(register));
+  }
+
+  /**
+  * This method reads and prints out the given or all register(s).
+  * If @param register = READ_ALL_REG then it is reads all available register.
+  *
+  * @param register register (as integer) to read from
   */
   void action(int register) {
     int v = 0;
@@ -49,19 +65,21 @@ class pcm1680core {
     if(register == READ_ALL_REG) {
       for(int i = 0; i < ALL_REG.length; i++) {
         v = read(device, ALL_REG[i]);
-        System.out.printf("address 0x%02X = %s (%d) - %s\n", ALL_REG[i], String.format("%8s", Integer.toString(v, 2)).replace(" ", "0"), v, ALL_REG_TXT[i]);
+        System.out.printf("address 0x%02X = %s (%3d) - %s\n", ALL_REG[i], String.format("%8s", Integer.toString(v, 2)).replace(" ", "0"), v, register2Text(i));
       }
     }
     else {
-      v = read(device, register);
-      System.out.printf("address 0x%02X = %s (%d) - %s\n", register, String.format("%8s", Integer.toString(v, 2)).replace(" ", "0"), v, ALL_REG_TXT[getRegPos(register)]);
+      if(isValidRegister(register)) {
+        v = read(device, register);
+        System.out.printf("address 0x%02X = %s (%d) - %s\n", register, String.format("%8s", Integer.toString(v, 2)).replace(" ", "0"), v, register2Text(getRegPos(register)));
+      }
     }
   }
 
   /**
   * This method writes data to register.
   *
-  * @param register register to write to
+  * @param register register (as integer) to write to
   * @param data data to be write to register
   */
   void action(int register, int data) {
@@ -78,26 +96,129 @@ class pcm1680core {
   }
 
   /**
+  * This method writes data to register.
+  *
+  * @param register register (as string) to write to
+  * @param data data to be write to register
+  */
+  void action(String register, int data) {
+    action(registerName2Number(register), data);
+  }
+
+  /**
   * This method checks whether the given register is valid or not.
   *
-  * @param register register to validate
+  * @param regObj register name or register number to validate
   *
   * @return true if the register is valid, otherwise returns false
   */
-  boolean isValidRegister(int register) {
+  boolean isValidRegister(Object regObj) {
+    String registerStr = "";
+    int registerInt = 0;
+
+    if(regObj instanceof String) {
+      registerStr = (String)regObj;
+      registerInt = registerName2Number(registerStr);
+
+      if(registerInt == -1 ) {
+        invalidRegisterMessage(registerStr);
+        return false;
+      }
+    }
+    else if(regObj instanceof Integer) {
+      registerInt = (int)regObj;
+    }
+    else {
+      return false;
+    }
+
     for(int r : ALL_REG) {
-      if(register == r) {
+      if(registerInt == r) {
         return true;
       }
     }
 
-    System.out.printf("0x%02X is not a valid register! Available registers in PCM1680 are:\n", register);
-    for(int i = 0; i < ALL_REG.length; i++) {
-      System.out.printf("0x%02X - %s\n", ALL_REG[i], ALL_REG_TXT[i]);
-    }
-    System.out.println("\n");
+    invalidRegisterMessage(registerInt);
 
     return false;
+  }
+
+  /**
+  * This method prints an error message if an invalid register number or register name given to the program.
+  */
+  private void invalidRegisterMessage(int register) {
+    invalidRegisterMessage(Integer.toString(register));
+  }
+
+  /**
+  * This method returns the text representation of a register.
+  *
+  * @param r (as integer) the register to be displayed by its name
+  *
+  * return returns the name(s) of the register
+  */
+  private StringBuilder register2Text(int r) {
+    StringBuilder regStr = new StringBuilder();
+
+    for(String reg : ALL_REG_TXT[r]) {
+      if(reg.equals(RSV_REG)) {
+        regStr.append("\u001B[31m");
+        regStr.append(reg);
+        regStr.append("\u001B[0m");
+      }
+      else {
+        regStr.append(reg);
+      }
+      regStr.append(" ");
+    }
+
+    return regStr;
+  }
+
+  /**
+  * This method prints an error message if an invalid register number or register name given to the program.
+  */
+  private void invalidRegisterMessage(String register) {
+    System.out.printf("%s is not a valid register! Available registers in PCM1680 are:\n", register);
+    for(int i = 0; i < ALL_REG.length; i++) {
+      System.out.printf("0x%02X -", ALL_REG[i]);
+      for(int j = 0; j < ALL_REG_TXT[i].length; j++) {
+        System.out.print(" ");
+        if(ALL_REG_TXT[i][j].equals(RSV_REG)) {
+          System.out.print("\u001B[31m");
+        }
+        System.out.print(ALL_REG_TXT[i][j]);
+        if(ALL_REG_TXT[i][j].equals(RSV_REG)) {
+          System.out.print("\u001B[0m");
+        }
+      }
+      System.out.print("\n");
+    }
+    System.out.println("\n");
+  }
+
+  /**
+  * This method returns the register number corresponding to the register name.
+  *
+  * @param register the register name
+  *
+  * @return returns the register number if its found, otherwise -1
+  */
+  private int registerName2Number(String register) {
+    register = register.toUpperCase();
+    if(register.equals(RSV_REG)) {
+      return -1;
+    }
+
+    for(int i = 0; i < ALL_REG_TXT.length; i++) {
+      for(int j = 0; j < ALL_REG_TXT[i].length; j++) {
+        if(ALL_REG_TXT[i][j].equals(register) || ALL_REG_TXT[i][j].equals("(" + register + ")")) {
+          return ALL_REG[i];
+        }
+      }
+    }
+
+    return -1;
   }
 
   /**
@@ -281,24 +402,24 @@ class pcm1680core {
   */
 
   /** available registers */
-  private static final int ALL_REG[]        = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0c, 0x0d, 0x0e, 0x10, 0x11, 0x12, 0x13};
-  private static final String ALL_REG_TXT[] = {"AT17 AT16 AT15 AT14 AT13 AT12 AT11 AT10",
-                                               "AT27 AT26 AT25 AT24 AT23 AT22 AT21 AT20",
-                                               "AT37 AT36 AT35 AT34 AT33 AT32 AT31 AT30",
-                                               "AT47 AT46 AT45 AT44 AT43 AT42 AT41 AT40",
-                                               "AT57 AT56 AT55 AT54 AT53 AT52 AT51 AT50",
-                                               "AT67 AT66 AT65 AT64 AT63 AT62 AT61 AT60",
-                                               "RSV RSV MUT6 MUT5 MUT4 MUT3 MUT2 MUT1",
-                                               "RSV RSV DAC6 DAC5 DAC4 DAC3 DAC2 DAC1",
-                                               "RSV RSV FLT RSV RSV FMT2 FMT1 FMT0",
-                                               "SRST ZREV DREV DMF1 DMF0 RSV RSV DMC",
-                                               "OVER RSV RSV RSV RSV RSV RSV RSV",
-                                               "DAMS AZRO1 AZRO0 RSV RSV RSV RSV RSV",
-                                               "ZERO8 ZERO7 ZERO6 ZERO5 ZERO4 ZERO3 ZERO2 ZERO1",
-                                               "AT77 AT76 AT75 AT74 AT73 AT72 AT71 AT70",
-                                               "AT87 AT86 AT85 AT84 AT83 AT82 AT81 AT80",
-                                               "RSV RSV RSV RSV RSV RSV MUT8 MUT7",
-                                               "RSV RSV RSV RSV RSV RSV DAC8 DAC7"};
+  private static final int ALL_REG[]          = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0c, 0x0d, 0x0e, 0x10, 0x11, 0x12, 0x13};
+  private static final String ALL_REG_TXT[][] = {{"AT17", "AT16", "AT15", "AT14", "AT13", "AT12", "AT11", "AT10", "(ATT1)"},
+                                                 {"AT27", "AT26", "AT25", "AT24", "AT23", "AT22", "AT21", "AT20", "(ATT2)"},
+                                                 {"AT37", "AT36", "AT35", "AT34", "AT33", "AT32", "AT31", "AT30", "(ATT3)"},
+                                                 {"AT47", "AT46", "AT45", "AT44", "AT43", "AT42", "AT41", "AT40", "(ATT4)"},
+                                                 {"AT57", "AT56", "AT55", "AT54", "AT53", "AT52", "AT51", "AT50", "(ATT5)"},
+                                                 {"AT67", "AT66", "AT65", "AT64", "AT63", "AT62", "AT61", "AT60", "(ATT6)"},
+                                                 {"RSV", "RSV", "MUT6", "MUT5", "MUT4", "MUT3", "MUT2", "MUT1", "(MUTE1)"},
+                                                 {"RSV", "RSV", "DAC6", "DAC5", "DAC4", "DAC3", "DAC2", "DAC1", "(DACS1)"},
+                                                 {"RSV", "RSV", "FLT", "RSV", "RSV", "FMT2", "FMT1", "FMT0", "(FMTS)"},
+                                                 {"SRST", "ZREV", "DREV", "DMF1", "DMF0", "RSV", "RSV", "DMC", "(DMFS)"},
+                                                 {"OVER", "RSV", "RSV", "RSV", "RSV", "RSV", "RSV", "RSV"},
+                                                 {"DAMS", "AZRO1", "AZRO0", "RSV", "RSV", "RSV", "RSV", "RSV", "(AZROS)"},
+                                                 {"ZERO8", "ZERO7", "ZERO6", "ZERO5", "ZERO4", "ZERO3", "ZERO2", "ZERO1", "(ZEROS)"},
+                                                 {"AT77", "AT76", "AT75", "AT74", "AT73", "AT72", "AT71", "AT70", "(ATT7)"},
+                                                 {"AT87", "AT86", "AT85", "AT84", "AT83", "AT82", "AT81", "AT80", "(ATT8)"},
+                                                 {"RSV", "RSV", "RSV", "RSV", "RSV", "RSV", "MUT8", "MUT7", "(MUTE2)"},
+                                                 {"RSV", "RSV", "RSV", "RSV", "RSV", "RSV", "DAC8", "DAC7", "(DACS2)"}};
 
   private static final int ATT_REG[]   = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x10, 0x11};         // attenuation registers (xxxxxxxx)
   private static final int ATT_VALUE[] = new int[8];                                               // attenuation values, can be 0-255
